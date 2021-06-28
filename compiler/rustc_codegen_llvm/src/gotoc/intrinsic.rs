@@ -344,7 +344,12 @@ impl<'tcx> GotocCtx<'tcx> {
             "mul_with_overflow" => codegen_op_with_overflow!(mul_overflow),
             "nearbyintf32" => codegen_simple_intrinsic!(Nearbyintf),
             "nearbyintf64" => codegen_simple_intrinsic!(Nearbyint),
-            "needs_drop" => codegen_intrinsic_const!(),
+            // https://doc.rust-lang.org/std/mem/fn.needs_drop.html
+            // `needs_drop` is purely an optimization hint, its conservative
+            // implementation may return true for any type that actually does
+            // not need to be dropped. As such, always returning true is a valid
+            // implementation of this function (intrinsic).
+            "needs_drop" => self.codegen_expr_to_place(p, Expr::c_true()),
             "offset" => codegen_intrinsic_binop!(plus),
             "powf32" => codegen_simple_intrinsic!(Powf),
             "powf64" => codegen_simple_intrinsic!(Pow),
