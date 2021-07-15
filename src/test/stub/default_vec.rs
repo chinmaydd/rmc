@@ -430,7 +430,6 @@ macro_rules! __impl_slice_eq1 {
     }
 }
 
-// __impl_slice_eq1! { RmcVec<T>, RmcVec<U> }
 __impl_slice_eq1! { [] RmcVec<T>, &[U] }
 __impl_slice_eq1! { [] RmcVec<T>, &mut [U] }
 __impl_slice_eq1! { [] &[T], RmcVec<U> }
@@ -438,4 +437,4 @@ __impl_slice_eq1! { [] &mut [T], RmcVec<U> }
 __impl_slice_eq1! { [const N: usize] RmcVec<T>, [U; N] }
 __impl_slice_eq1! { [const N: usize] RmcVec<T>, &[U; N] }
 
-fn main() {}
+// fn main() {}
