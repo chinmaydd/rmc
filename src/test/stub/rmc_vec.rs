@@ -1,13 +1,20 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+// This is the default vector abstraction which supports all methods and is generic
+// over the type of the elements it can contain.
+//
+// The implementation is heavily inspired from the Rustonomicon and the Smack library.
 extern crate libc;
 
 use std::mem;
+use std::marker::PhantomData;
 use std::ptr::{copy, write, read};
 use std::ops::{Deref, DerefMut};
 
 pub struct RmcUnique<T: Sized> {
     ptr: *const T, // *const for variance
-    // NOTE: Ideally marker contains PhantomData
-    _marker: u64,
+    _marker: PhantomData<T>,
 }
 
 impl<T: Sized> RmcUnique<T> {
@@ -23,6 +30,12 @@ impl<T: Sized> RmcUnique<T> {
     }
 }
 
+// sized_realloc implements resizing of memory which stores the elements contained
+// in the vector.
+//
+// TODO: This method is the fundamental bottleneck when resizing the array due to
+// the expensive malloc + memcpy procedures. Its remains to be seen if this can be
+// optimized using custom CBMC primitives.
 fn sized_realloc(orig_ptr: *mut u8, orig_size: usize, new_size: usize) -> *mut u8 {
     unsafe {
         let result = libc::malloc(new_size) as *mut u8;
@@ -35,6 +48,8 @@ fn sized_realloc(orig_ptr: *mut u8, orig_size: usize, new_size: usize) -> *mut u
     }
 }
 
+// RmcRawVec abstracts away common methods and functionality otherwise needed for
+// RmcVec and RmcIter
 struct RmcRawVec<T: Sized> {
     ptr: RmcUnique<T>,
     cap: usize,
@@ -43,9 +58,8 @@ struct RmcRawVec<T: Sized> {
 impl<T: Sized> RmcRawVec<T> {
     fn new() -> Self {
         let elem_size = mem::size_of::<T>();
-        // NOTE: This default allocation size is important.
-        // According to Mark. B of the Smack team, a default 0 size leads to
-        // complex solver queries for smaller vec operations
+        // NOTE: (Mark. B) This default allocation size is important.
+        // A default 0 size leads to complex solver queries for smaller vec operations
         let cap = 32;
         let ptr = unsafe { RmcUnique::new(libc::malloc(cap * elem_size) as *mut T) };
         RmcRawVec { ptr, cap }
@@ -57,6 +71,8 @@ impl<T: Sized> RmcRawVec<T> {
         RmcRawVec { ptr, cap }
     }
 
+    // grow() calls sized_realloc. By default, the new memory has twice the capacity
+    // of the old one.
     fn grow(&mut self) {
         let elem_size = mem::size_of::<T>();
         let new_cap = 2 * self.cap;
@@ -95,12 +111,14 @@ impl<T: Sized> RmcRawVec<T> {
     }
 }
 
+// TODO: Implement this soundly.
 impl<T: Sized> Drop for RmcRawVec<T> {
     fn drop(&mut self) {
-        unsafe { libc::free(self.ptr.ptr as *mut _) };
+        // unsafe { libc::free(self.ptr.ptr as *mut _) };
     }
 }
 
+// Vec abstraction
 pub struct RmcVec<T: Sized> {
     buf: RmcRawVec<T>,
     len: usize,
@@ -260,12 +278,14 @@ impl<T: Default> Default for RmcVec<T> {
     }
 }
 
+// TODO: Implement this soundly.
 impl<T: Sized> Drop for RmcVec<T> {
     fn drop(&mut self) {
-        while let Some(_) = self.pop() {}
     }
 }
 
+// Coercion support into Deref allows us to benefit from operations on slice
+// implemented in the standard library.
 impl<T: Sized> Deref for RmcVec<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
@@ -387,9 +407,9 @@ impl<T: Sized> DoubleEndedIterator for RmcIntoIter<T> {
     }
 }
 
+// TODO: Implement this soundly.
 impl<T: Sized> Drop for RmcIntoIter<T> {
     fn drop(&mut self) {
-        for _ in &mut *self {}
     }
 }
 
@@ -436,5 +456,3 @@ __impl_slice_eq1! { [] &[T], RmcVec<U> }
 __impl_slice_eq1! { [] &mut [T], RmcVec<U> }
 __impl_slice_eq1! { [const N: usize] RmcVec<T>, [U; N] }
 __impl_slice_eq1! { [const N: usize] RmcVec<T>, &[U; N] }
-
-// fn main() {}

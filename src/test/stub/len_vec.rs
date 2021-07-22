@@ -1,17 +1,34 @@
-// Abstraction which tracks the length and the last element of the vector
-struct RmcLenVec<T> {
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+#![feature(rustc_private)]
+extern crate libc;
+
+use std::mem;
+use std::ptr::{write, read};
+
+// Abstraction which tracks only the length and the last element of the vector.
+pub struct RmcLenVec<T> {
     len: usize,
-    last: Option<T>,
+    last: Option<*mut T>,
 }
 
-impl<T: Copy> RmcLenVec<T> {
+impl<T> RmcLenVec<T> {
     fn drain(&mut self) {
         self.len = 0;
         self.last = None;
     }
 
-    fn update_last(&mut self, elem: Option<T>) {
-        self.last = elem;
+    fn update_last(&mut self, elem: T) {
+        if self.len == 0 {
+            let elem_size = mem::size_of::<T>();
+            let ptr = unsafe { libc::malloc(elem_size) as *mut T };
+            self.last = Some(ptr);
+        }
+
+        unsafe {
+            write(self.last.unwrap().offset(0), elem);
+        }
     }
 
     pub fn new() -> RmcLenVec<T> {
@@ -29,8 +46,15 @@ impl<T: Copy> RmcLenVec<T> {
     }
 
     pub fn push(&mut self, elem: T) {
+        if self.len == 0 {
+            let elem_size = mem::size_of::<T>();
+            let ptr = unsafe { libc::malloc(elem_size) as *mut T };
+            self.last = Some(ptr);
+        }
         self.len += 1;
-        self.last = Some(elem);
+        unsafe {
+            write(self.last.unwrap().offset(0), elem);
+        }
     }
 
     pub fn pop(&mut self) -> Option<T> {
@@ -38,13 +62,15 @@ impl<T: Copy> RmcLenVec<T> {
             None
         } else {
             self.len -= 1;
-            self.last
+            unsafe {
+                Some(read(self.last.unwrap().offset(0)))
+            }
         }
     }
 
     pub fn append(&mut self, other: &mut RmcLenVec<T>) {
         if other.len() != 0 {
-            self.update_last(other.pop());
+            self.update_last(other.pop().unwrap());
             self.len += other.len();
         }
     }
@@ -71,11 +97,16 @@ impl<T: Copy> RmcLenVec<T> {
 
     pub fn extend<I: Iterator>(&mut self, iter: I) where I: Iterator<Item = T> {
         let mut last = None;
+        let mut other_len = 0;
         for value in iter {
             self.len += 1;
             last = Some(value);
+            other_len += 1;
         }
-        self.update_last(last);
+
+        if other_len != 0 {
+            self.update_last(last.unwrap());
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -90,13 +121,9 @@ impl<T: Copy> RmcLenVec<T> {
     }
 }
 
+// TODO: Implement this soundly.
 impl<T> Drop for RmcLenVec<T> {
     fn drop(&mut self) {
     }
 }
 
-// NOTE: To implement:
-// Iterators
-// PartialEq
-
-fn main() {}

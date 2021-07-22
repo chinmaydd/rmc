@@ -1,6 +1,12 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #![feature(rustc_private)]
 extern crate libc;
 use libc::c_uint;
+
+// WIP: HashSet abstraction. Currently only implements the idea for a HashSet<u32> 
+// as an experiment. This function uses uninterpreted functions to model a set().
 
 extern "C" {
     fn ffi_insert(value: c_uint) -> c_uint;
@@ -12,7 +18,7 @@ pub struct HashSet {
     len: c_uint
 }
 
-// Currently only implemented for c_uint
+// Currently only implemented for c_uint = u32
 impl HashSet {
     fn new() -> Self {
         HashSet {
@@ -46,13 +52,4 @@ impl HashSet {
             ffi_remove(value) != 0
         }
     }
-}
-
-fn main() {
-    let mut h: HashSet = HashSet::new();
-    h.insert(5);
-    h.insert(6);
-    assert!(h.contains(5));
-    assert!(h.contains(6));
-    assert!(!h.contains(7));
 }

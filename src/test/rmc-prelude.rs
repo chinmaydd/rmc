@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 mod stub;
-use stub::default_vec::RmcVec;
+use stub::rmc_vec::RmcVec;
+use stub::len_vec::RmcLenVec;
 
 fn __VERIFIER_assume(cond: bool) {
     unimplemented!()

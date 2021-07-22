@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #include <stdint.h>
 
 uint32_t __CPROVER_uninterpreted_f(uint32_t);
