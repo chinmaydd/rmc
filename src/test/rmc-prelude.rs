@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 mod stub;
+
 use stub::rmc_vec::RmcVec;
 use stub::len_vec::RmcLenVec;
+use stub::c_vec::CVec;
+
+use stub::hashset::HashSet;
 
 fn __VERIFIER_assume(cond: bool) {
     unimplemented!()

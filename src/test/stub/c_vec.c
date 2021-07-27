@@ -12,8 +12,9 @@ typedef struct {
 } vec;
 
 void grow(vec* v) {
-	uint32_t* new_mem = (uint32_t *) realloc(v->mem, v->capacity * 2);
+	uint32_t* new_mem = (uint32_t *) realloc(v->mem, v->capacity * 2 * sizeof(uint32_t));
 	v->mem = new_mem;
+	v->capacity = v->capacity * 2;
 }
 
 vec* ffi_new() {

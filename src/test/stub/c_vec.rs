@@ -4,7 +4,7 @@
 #![feature(rustc_private)]
 extern crate libc;
 
-use libc::{c_uint, size_t};
+use self::libc::{c_uint, size_t};
 use std::marker::PhantomData;
 
 // Abstraction which implements Vec operations using CBMC C primitives by only
@@ -29,19 +29,19 @@ pub struct c_vec {
     capacity: size_t
 }
 
-pub struct Vec<T> {
+pub struct CVec<T> {
     ptr: *mut c_vec,
     phantom: PhantomData<T>
 }
 
-impl<T> Vec<T> {
+impl<T> CVec<T> {
     pub fn ptr(&mut self) -> *mut c_vec {
         return self.ptr;
     }
 
     pub fn new() -> Self {
         unsafe {
-            Vec {
+            CVec {
                 ptr: ffi_new(),
                 phantom: Default::default()
             }
@@ -50,7 +50,7 @@ impl<T> Vec<T> {
 
     pub fn with_capacity(cap: usize) -> Self {
         unsafe {
-            Vec {
+            CVec {
                 ptr: ffi_with_capacity(cap),
                 phantom: Default::default()
             }
@@ -73,7 +73,7 @@ impl<T> Vec<T> {
         }
     }
 
-    pub fn append(&mut self, other: &mut Vec<T>) {
+    pub fn append(&mut self, other: &mut CVec<T>) {
         unsafe {
             ffi_append(self.ptr, other.ptr());
         }

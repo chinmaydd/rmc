@@ -3,3 +3,5 @@
 
 pub mod rmc_vec;
 pub mod len_vec;
+pub mod c_vec;
+pub mod hashset;

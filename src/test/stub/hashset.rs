@@ -1,9 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#![feature(rustc_private)]
 extern crate libc;
-use libc::c_uint;
+use self::libc::c_uint;
 
 // WIP: HashSet abstraction. Currently only implements the idea for a HashSet<u32> 
 // as an experiment. This function uses uninterpreted functions to model a set().
@@ -20,34 +19,34 @@ pub struct HashSet {
 
 // Currently only implemented for c_uint = u32
 impl HashSet {
-    fn new() -> Self {
+    pub fn new() -> Self {
         HashSet {
             len: 0
         }
     }
 
-    fn with_capacity(_capacity: usize) -> Self {
+    pub fn with_capacity(_capacity: usize) -> Self {
         HashSet {
             len: 0
         }
     }
 
     // TODO: Need to figure out how to return bool
-    fn insert(&mut self, value: c_uint) -> bool {
+    pub fn insert(&mut self, value: c_uint) -> bool {
         unsafe {
             ffi_insert(value) != 0
         }
     }
 
-    fn contains(&self, value: c_uint) -> bool {
+    pub fn contains(&self, value: &c_uint) -> bool {
         unsafe {
-            ffi_contains(value) != 0
+            ffi_contains(*value) != 0
         }
     }
 
     // TODO: Need to figure out how to return bool
     // TODO: Need to figure out how to REMOVE
-    fn remove(&mut self, value: c_uint) -> bool {
+    pub fn remove(&mut self, value: c_uint) -> bool {
         unsafe {
             ffi_remove(value) != 0
         }

@@ -236,6 +236,10 @@ impl<T: Sized> RmcVec<T> {
 
         self.len = new_len;
     }
+
+    // pub fn sort_unstable(&mut self) {
+    //     assert!(false);
+    // }
 }
 
 impl<T: Sized + PartialEq> PartialEq for RmcVec<T> {
