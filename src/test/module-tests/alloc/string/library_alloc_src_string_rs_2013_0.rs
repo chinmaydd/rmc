@@ -1,0 +1,9 @@
+#![allow(unused_variables)]
+#![deny(warnings)]
+fn main() {
+    #[allow(non_snake_case)]
+    fn _doctest_main_library_alloc_src_string_rs_2013_0() {
+        assert_eq!(String::from("Hello world").find("world"), Some(6));
+    }
+    _doctest_main_library_alloc_src_string_rs_2013_0()
+}
