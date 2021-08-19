@@ -133,16 +133,16 @@ impl<'tcx> GotocCtx<'tcx> {
         } else if self.use_vtable_fat_pointer(place_mir_type) {
             if self.is_unsized(place_mir_type) {
                 let vtable_name = match place_mir_type.kind() {
-                    ty::Dynamic(..) => {
-                        self.vtable_name(place_mir_type)
-                    }
+                    ty::Dynamic(..) => self.vtable_name(place_mir_type),
                     _ => {
                         let place_mir_mangled_name = self.ty_mangled_name(place_mir_type);
                         let mir_ref_type_name = format!("&{}", &place_mir_mangled_name);
                         format!("{}::vtable", &mir_ref_type_name)
                     }
                 };
-                intermediate_fat_pointer.member("vtable", &self.symbol_table).cast_to(Type::struct_tag(&vtable_name).to_pointer())
+                intermediate_fat_pointer
+                    .member("vtable", &self.symbol_table)
+                    .cast_to(Type::struct_tag(&vtable_name).to_pointer())
             } else {
                 intermediate_fat_pointer.member("vtable", &self.symbol_table)
             }
@@ -157,21 +157,14 @@ impl<'tcx> GotocCtx<'tcx> {
         } else if self.use_vtable_fat_pointer(place_mir_type) {
             match place_mir_type.kind() {
                 ty::Adt(..) => {
-                    dynamic_fat_ptr(
-                        result_goto_type,
-                        thin_pointer,
-                        metadata,
-                        &self.symbol_table,
-                    )
+                    dynamic_fat_ptr(result_goto_type, thin_pointer, metadata, &self.symbol_table)
                 }
-                _ => {
-                    dynamic_fat_ptr(
-                        result_goto_type,
-                        thin_pointer.cast_to(Type::void_pointer()),
-                        metadata,
-                        &self.symbol_table,
-                    )
-                }
+                _ => dynamic_fat_ptr(
+                    result_goto_type,
+                    thin_pointer.cast_to(Type::void_pointer()),
+                    metadata,
+                    &self.symbol_table,
+                ),
             }
         } else {
             unreachable!();
@@ -1068,10 +1061,13 @@ impl<'tcx> GotocCtx<'tcx> {
         if let Some((concrete_type, trait_type)) =
             self.nested_pair_of_concrete_and_trait_types(src_pointee_type, dst_pointee_type)
         {
-            debug!("cast_sized_pointer_to_trait_fat_pointer: {:?} {:?}", src_goto_expr, dst_mir_type);
+            debug!(
+                "cast_sized_pointer_to_trait_fat_pointer: {:?} {:?}",
+                src_goto_expr, dst_mir_type
+            );
             let dst_goto_expr = match dst_pointee_type.kind() {
                 ty::Adt(..) => src_goto_expr,
-                _ => src_goto_expr.cast_to(Type::void_pointer())
+                _ => src_goto_expr.cast_to(Type::void_pointer()),
             };
             // let dst_goto_expr = src_goto_expr.cast_to(Type::void_pointer());
             let dst_goto_type = self.codegen_ty(dst_mir_type);
