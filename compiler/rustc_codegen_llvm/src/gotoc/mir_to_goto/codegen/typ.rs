@@ -710,8 +710,30 @@ impl<'tcx> GotocCtx<'tcx> {
         } else if self.use_vtable_fat_pointer(mir_type) {
             let (_, trait_type) =
                 self.nested_pair_of_concrete_and_trait_types(mir_type, mir_type).unwrap();
+
             self.codegen_trait_vtable_type(trait_type);
-            self.codegen_trait_fat_ptr_type(trait_type)
+            match mir_type.kind() {
+                ty::Adt(..) => {
+                    let mir_codegen_ty = self.codegen_ty(mir_type);
+                    let mir_ref_type_name = format!("&{}", &self.ty_mangled_name(mir_type));
+                    let vtable_name = format!("{}::vtable", mir_ref_type_name);
+                    self.ensure_struct(&mir_ref_type_name, |_, _| {
+                        vec![
+                            Type::datatype_component("data", mir_codegen_ty.to_pointer()),
+                            Type::datatype_component(
+                                "vtable",
+                                Type::struct_tag(&vtable_name).to_pointer(),
+                            ),
+                        ]
+                    })
+                }
+                _ => self.codegen_trait_fat_ptr_type(trait_type),
+            }
+
+            // let (_, trait_type) =
+            //     self.nested_pair_of_concrete_and_trait_types(mir_type, mir_type).unwrap();
+            // self.codegen_trait_vtable_type(trait_type);
+            // self.codegen_trait_fat_ptr_type(trait_type)
         } else {
             unreachable!(
                 "A pointer is either a thin pointer, slice fat pointer, or vtable fat pointer."

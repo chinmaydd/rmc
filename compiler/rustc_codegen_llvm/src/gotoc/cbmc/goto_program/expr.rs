@@ -8,6 +8,7 @@ use super::{DatatypeComponent, Location, Parameter, Stmt, SwitchCase, SymbolTabl
 use num::bigint::BigInt;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use tracing::debug;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 /// Datatypes
@@ -634,6 +635,9 @@ impl Expr {
             typ,
             components
         );
+
+        debug!("struct_expr: These fields are needed: {:?}", non_padding_fields);
+        debug!("struct_expr: These fields are found: {:?}", components);
 
         // Check that each formal field has an value
         for field in non_padding_fields {
