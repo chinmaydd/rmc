@@ -117,6 +117,8 @@ impl<'tcx> GotocCtx<'tcx> {
                             let trait_fat_ptr =
                                 self.codegen_place(location).fat_ptr_goto_expr.unwrap();
 
+                            debug!("codegen_drop: {:?}", trait_fat_ptr);
+
                             // Pull the function off of the fat pointer's vtable pointer
                             let vtable_ref =
                                 trait_fat_ptr.to_owned().member("vtable", &self.symbol_table);
