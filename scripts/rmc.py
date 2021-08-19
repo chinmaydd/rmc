@@ -138,13 +138,15 @@ def run_cmd(cmd, label=None, cwd=None, env=None, output_to=None, quiet=False, ve
 def compile_single_rust_file(input_filename, output_filename, verbose=False, debug=False, keep_temps=False, mangler="v0", dry_run=False, symbol_table_passes=[]):
     if not keep_temps:
         atexit.register(delete_file, output_filename)
-        
+
     build_cmd = [RMC_RUSTC_EXE, 
-                 "-Z", "codegen-backend=gotoc",
-                 "-Z", "trim-diagnostic-paths=no",
-                 "-Z", f"symbol-mangling-version={mangler}",
-                 "-Z", f"symbol_table_passes={' '.join(symbol_table_passes)}",
-                 f"--cfg={RMC_CFG}", "-o", output_filename, input_filename]
+            "-Z", "codegen-backend=gotoc", 
+            "-Z", f"symbol-mangling-version={mangler}", 
+            "-Z", f"symbol_table_passes={' '.join(symbol_table_passes)}",
+            "-Z", "force-unstable-if-unmarked=yes",
+            "--cfg", f'abs_type="{abs_type}"',
+            f"--cfg={RMC_CFG}", 
+            "-o", output_filename, input_filename]
     if "RUSTFLAGS" in os.environ:
         build_cmd += os.environ["RUSTFLAGS"].split(" ")
     build_env = os.environ
