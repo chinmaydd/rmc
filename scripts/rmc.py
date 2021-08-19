@@ -135,7 +135,7 @@ def run_cmd(cmd, label=None, cwd=None, env=None, output_to=None, quiet=False, ve
     return process.returncode
 
 # Generates a symbol table from a rust file
-def compile_single_rust_file(input_filename, output_filename, verbose=False, debug=False, keep_temps=False, mangler="v0", dry_run=False, symbol_table_passes=[]):
+def compile_single_rust_file(input_filename, output_filename, verbose=False, debug=False, keep_temps=False, mangler="v0", dry_run=False, abs_type="std", symbol_table_passes=[]):
     if not keep_temps:
         atexit.register(delete_file, output_filename)
 
