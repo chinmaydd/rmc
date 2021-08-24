@@ -117,8 +117,6 @@ impl<'tcx> GotocCtx<'tcx> {
                             let trait_fat_ptr =
                                 self.codegen_place(location).fat_ptr_goto_expr.unwrap();
 
-                            debug!("codegen_drop: {:?}", trait_fat_ptr);
-
                             // Pull the function off of the fat pointer's vtable pointer
                             let vtable_ref =
                                 trait_fat_ptr.to_owned().member("vtable", &self.symbol_table);
@@ -132,6 +130,8 @@ impl<'tcx> GotocCtx<'tcx> {
                                 self_ref.cast_to(trait_fat_ptr.typ().clone().to_pointer());
 
                             let func_exp: Expr = fn_ptr.dereference();
+
+                            debug!("codegen_drop: {:?} {:?}", func_exp, self_ref);
                             func_exp.call(vec![self_ref]).as_stmt(Location::none())
                         }
                         _ => {

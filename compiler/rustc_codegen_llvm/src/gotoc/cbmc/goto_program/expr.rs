@@ -638,6 +638,7 @@ impl Expr {
 
         debug!("struct_expr: These fields are needed: {:?}", non_padding_fields);
         debug!("struct_expr: These fields are found: {:?}", components);
+        debug!("struct_expr: typ is : {:?}", typ);
 
         // Check that each formal field has an value
         for field in non_padding_fields {
@@ -653,6 +654,7 @@ impl Expr {
                 if field.is_padding() {
                     field.typ().nondet()
                 } else {
+                    // components.remove(field.name()).unwrap()
                     let comp = components.remove(field.name()).unwrap();
                     if comp.typ() != &field.typ() {
                         debug!("struct_expr: Force-casting {:?} to {:?}", comp.typ(), field.typ());

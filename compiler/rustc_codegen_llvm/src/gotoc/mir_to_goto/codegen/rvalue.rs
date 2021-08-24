@@ -135,9 +135,18 @@ impl<'tcx> GotocCtx<'tcx> {
                 let vtable_name = match place_mir_type.kind() {
                     ty::Dynamic(..) => self.vtable_name(place_mir_type),
                     _ => {
+                        let (_, trait_type) = self.nested_pair_of_concrete_and_trait_types(place_mir_type, place_mir_type).unwrap();
+                        let trait_vtable_type = self.codegen_trait_vtable_type(trait_type);
+                        let mir_codegen_ty = self.codegen_ty(place_mir_type);
                         let place_mir_mangled_name = self.ty_mangled_name(place_mir_type);
                         let mir_ref_type_name = format!("&{}", &place_mir_mangled_name);
-                        format!("{}::vtable", &mir_ref_type_name)
+                        self.ensure_struct(&mir_ref_type_name, |_, _| {
+                            vec![
+                                Type::datatype_component("data", mir_codegen_ty.to_pointer()),
+                                Type::datatype_component("vtable", trait_vtable_type.to_pointer()),
+                            ]
+                        });
+                        format!("{}", &self.vtable_name(trait_type))
                     }
                 };
                 intermediate_fat_pointer
@@ -810,7 +819,7 @@ impl<'tcx> GotocCtx<'tcx> {
         Stmt::block(vec![decl, size_assert], Location::none())
     }
 
-    fn codegen_vtable(&mut self, src_mir_type: Ty<'tcx>, dst_mir_type: Ty<'tcx>) -> Expr {
+    pub fn codegen_vtable(&mut self, src_mir_type: Ty<'tcx>, dst_mir_type: Ty<'tcx>) -> Expr {
         let trait_type = match dst_mir_type.kind() {
             // DST is pointer type
             ty::Ref(_, pointee_type, ..) => pointee_type,
@@ -1065,12 +1074,17 @@ impl<'tcx> GotocCtx<'tcx> {
                 "cast_sized_pointer_to_trait_fat_pointer: {:?} {:?}",
                 src_goto_expr, dst_mir_type
             );
+
+            // Handling ADTs differently
+            //
+            // let dst_goto_expr = src_goto_expr.cast_to(Type::void_pointer());
             let dst_goto_expr = match dst_pointee_type.kind() {
                 ty::Adt(..) => src_goto_expr,
                 _ => src_goto_expr.cast_to(Type::void_pointer()),
             };
-            // let dst_goto_expr = src_goto_expr.cast_to(Type::void_pointer());
+
             let dst_goto_type = self.codegen_ty(dst_mir_type);
+            debug!("cast_sized_pointer_to_trait_fat_pointer: concrete type {:?}", concrete_type);
             let vtable = self.codegen_vtable(concrete_type, trait_type);
             let vtable_expr = vtable.address_of();
             Some(dynamic_fat_ptr(dst_goto_type, dst_goto_expr, vtable_expr, &self.symbol_table))
