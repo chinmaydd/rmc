@@ -2,45 +2,48 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 extern crate libc;
-use self::libc::c_uint;
+use self::libc::{c_int, c_uint};
 
 // WIP: HashSet abstraction. Currently only implements the idea for a HashSet<u32> 
 // as an experiment. This function uses uninterpreted functions to model a set().
 
 extern "C" {
-    fn ffi_insert(value: c_uint) -> c_uint;
-    fn ffi_contains(value: c_uint) -> c_uint;
-    fn ffi_remove(value: c_uint) -> c_uint;
+    fn ffi_new() -> *mut c_hashset;
+    fn ffi_insert(ptr: *mut c_hashset, value: c_uint) -> c_uint;
+    fn ffi_contains(ptr: *mut c_hashset, value: c_uint) -> c_uint;
+    fn ffi_remove(ptr: *mut c_hashset, value: c_uint) -> c_uint;
+}
+
+#[repr(C)]
+pub struct c_hashset {
+    domain: [c_int; u32::MAX as usize],
+    counter: c_uint
 }
 
 pub struct HashSet {
-    len: c_uint
+    ptr: *mut c_hashset,
 }
 
 // Currently only implemented for c_uint = u32
 impl HashSet {
     pub fn new() -> Self {
-        HashSet {
-            len: 0
-        }
-    }
-
-    pub fn with_capacity(_capacity: usize) -> Self {
-        HashSet {
-            len: 0
+        unsafe {
+            HashSet {
+                ptr: ffi_new(),
+            }
         }
     }
 
     // TODO: Need to figure out how to return bool
     pub fn insert(&mut self, value: c_uint) -> bool {
         unsafe {
-            ffi_insert(value) != 0
+            ffi_insert(self.ptr, value) != 0
         }
     }
 
     pub fn contains(&self, value: &c_uint) -> bool {
         unsafe {
-            ffi_contains(*value) != 0
+            ffi_contains(self.ptr, *value) != 0
         }
     }
 
@@ -48,7 +51,7 @@ impl HashSet {
     // TODO: Need to figure out how to REMOVE
     pub fn remove(&mut self, value: c_uint) -> bool {
         unsafe {
-            ffi_remove(value) != 0
+            ffi_remove(self.ptr, value) != 0
         }
     }
 }

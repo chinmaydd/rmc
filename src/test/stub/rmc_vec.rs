@@ -10,12 +10,25 @@ extern crate libc;
 use std::mem;
 use std::marker::PhantomData;
 use std::ptr::{copy, write, read, replace, copy_nonoverlapping};
-use std::ops::{Deref, DerefMut, FnMut, RangeBounds, Range};
+use std::ops::{Index, Deref, DerefMut, FnMut, RangeBounds, IndexMut};
+use std::slice::SliceIndex;
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::iter::FromIterator;
+use std::slice;
+
+const DEFAULT_CAPACITY: usize = 1024;
 
 pub struct RmcUnique<T> {
     ptr: *const T, // *const for variance
     _marker: PhantomData<T>,
 }
+
+// impl<T> Drop for RmcUnique<T> {
+//     fn drop(&mut self) {
+//         unsafe { libc::free(self.ptr as *mut _) };
+//     }
+// }
 
 impl<T> RmcUnique<T> {
     pub fn new(ptr: *mut T) -> Self {
@@ -64,7 +77,7 @@ impl<T> RmcRawVec<T> {
         let elem_size = mem::size_of::<T>();
         // NOTE: (Mark. B) This default allocation size is important.
         // A default 0 size leads to complex solver queries for smaller vec operations
-        let cap = 32;
+        let cap = DEFAULT_CAPACITY;
         let ptr = unsafe { RmcUnique::new(libc::malloc(cap * elem_size) as *mut T) };
         RmcRawVec { ptr, cap }
     }
@@ -124,13 +137,6 @@ impl<T> RmcRawVec<T> {
 
     fn capacity(&self) -> usize {
         self.cap
-    }
-}
-
-// TODO: Implement this soundly.
-impl<T> Drop for RmcRawVec<T> {
-    fn drop(&mut self) {
-        // unsafe { libc::free(self.ptr.ptr as *mut _) };
     }
 }
 
@@ -304,7 +310,6 @@ impl <T, A: Allocator> Vec<T, A> {
         self.buf.ptr.as_const_ptr()
     }
 
-
     pub fn truncate(&mut self, len: usize) {
         // TODO: For soundness wrt standard library, call drop_in_place() for pointer
         // pointing to a slice of elements which were dropped.
@@ -471,11 +476,6 @@ impl <T, A: Allocator> Vec<T, A> {
             allocator: alloc
         }
     }
-
-    // pub fn into_boxed_slice(mut self) -> Box<[T], A> {
-    //     unsafe {
-    //     }
-    // }
 }
 
 impl<T: Clone, A: Allocator> Vec<T, A> {
@@ -518,6 +518,10 @@ impl<T: PartialEq, A: Allocator> Vec<T, A> {
     }
 }
 
+////////////////////////////////////////////////////////////
+// Trait implementations for Vec                          //
+////////////////////////////////////////////////////////////
+
 impl<T: PartialEq, A: Allocator> PartialEq for Vec<T, A> {
     fn eq(&self, other: &Self) -> bool {
         if self.len() != other.len() {
@@ -558,26 +562,109 @@ impl<T> Default for Vec<T> {
     }
 }
 
-// TODO: Implement this soundly.
-impl<T, A: Allocator> Drop for Vec<T, A> {
-    fn drop(&mut self) {
-    }
-}
-
 // Coercion support into Deref allows us to benefit from operations on slice
 // implemented in the standard library.
 impl<T, A: Allocator> Deref for Vec<T, A> {
     type Target = [T];
+
     fn deref(&self) -> &[T] {
-        unsafe { ::std::slice::from_raw_parts(self.buf.ptr.ptr, self.len) }
+        unsafe { ::std::slice::from_raw_parts(self.ptr(), self.len) }
     }
 }
 
 impl<T, A: Allocator> DerefMut for Vec<T, A> {
     fn deref_mut(&mut self) -> &mut [T] {
-        unsafe { ::std::slice::from_raw_parts_mut(self.buf.ptr.ptr as *mut T, self.len) }
+        unsafe { ::std::slice::from_raw_parts_mut(self.ptr() as *mut T, self.len) }
     }
 }
+
+impl <T: Clone, A: Allocator + Clone> Clone for Vec<T, A> {
+    fn clone(&self) -> Self {
+        let mut v = Self::with_capacity_in(self.len(), self.allocator.clone());
+        for idx in 0..self.len() {
+            v.push(self[idx].clone());
+        }
+        v
+    }
+
+    fn clone_from(&mut self, other: &Self) {
+       *self = other.clone();
+    }
+}
+
+impl <T: Hash, A: Allocator> Hash for Vec<T, A> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Hash::hash(&**self, state)
+    }
+}
+
+impl <T, I: SliceIndex<[T]>, A: Allocator> Index<I> for Vec<T, A> {
+    type Output = I::Output;
+
+    fn index(&self, index: I) -> &Self::Output {
+        Index::index(&**self, index)
+    }
+}
+
+impl<T, I: SliceIndex<[T]>, A: Allocator> IndexMut<I> for Vec<T, A> {
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        IndexMut::index_mut(&mut **self, index)
+    }
+}
+
+impl<T> FromIterator<T> for Vec<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Vec<T> {
+        let mut v = Vec::new();
+        for elem in iter.into_iter() {
+            v.push(elem);
+        }
+        v
+    }
+}
+
+impl<'a, T, A: Allocator> IntoIterator for &'a Vec<T, A> {
+    type Item = &'a T;
+    type IntoIter = slice::Iter<'a, T>;
+
+    fn into_iter(self) -> slice::Iter<'a, T> {
+        self.iter()
+    }
+}
+
+impl<'a, T, A: Allocator> IntoIterator for &'a mut Vec<T, A> {
+    type Item = &'a mut T;
+    type IntoIter = slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> slice::IterMut<'a, T> {
+        self.iter_mut()
+    }
+}
+
+impl<T, A: Allocator> Extend<T> for Vec<T, A> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for elem in iter.into_iter() {
+            v.push(elem);
+        }
+    }
+
+    fn extend_one(&mut self, item: T) {
+        self.push(item);
+    }
+
+    fn extend_reserve(&mut self, additional: usize) {
+        self.reserve(additional);
+    }
+}
+
+impl<T: fmt::Debug, A: Allocator> fmt::Debug for Vec<T, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
+////////////////////////////////////////////////////////////
+// RMCIter                                                //
+////////////////////////////////////////////////////////////
 
 struct RmcRawValIter<T> {
     start: *const T,
@@ -687,12 +774,7 @@ impl<T: Sized> DoubleEndedIterator for RmcIntoIter<T> {
     }
 }
 
-// TODO: Implement this soundly.
-impl<T: Sized> Drop for RmcIntoIter<T> {
-    fn drop(&mut self) {
-    }
-}
-
+#[cfg(abs_type = "rmc")]
 #[macro_export]
 macro_rules! rmc_vec {
   ( $val:expr ; $count:expr ) =>
