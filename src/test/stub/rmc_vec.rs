@@ -9,13 +9,15 @@ extern crate libc;
 
 use std::mem;
 use std::marker::PhantomData;
-use std::ptr::{copy, write, read, replace, copy_nonoverlapping};
+use std::ptr::{drop_in_place, slice_from_raw_parts_mut, copy, write, read, replace, copy_nonoverlapping};
 use std::ops::{Index, Deref, DerefMut, FnMut, RangeBounds, IndexMut};
-use std::slice::SliceIndex;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::slice;
+use std::cmp;
+use std::borrow::Cow;
+use std::convert::TryFrom;
 
 const DEFAULT_CAPACITY: usize = 1024;
 
@@ -24,11 +26,11 @@ pub struct RmcUnique<T> {
     _marker: PhantomData<T>,
 }
 
-// impl<T> Drop for RmcUnique<T> {
-//     fn drop(&mut self) {
-//         unsafe { libc::free(self.ptr as *mut _) };
-//     }
-// }
+impl<T> Drop for RmcUnique<T> {
+    fn drop(&mut self) {
+        unsafe { libc::free(self.ptr as *mut _) };
+    }
+}
 
 impl<T> RmcUnique<T> {
     pub fn new(ptr: *mut T) -> Self {
@@ -47,24 +49,6 @@ impl<T> RmcUnique<T> {
     }
 }
 
-// sized_realloc implements resizing of memory which stores the elements contained
-// in the vector.
-//
-// TODO: This method is the fundamental bottleneck when resizing the array due to
-// the expensive malloc + memcpy procedures. Its remains to be seen if this can be
-// optimized using custom CBMC primitives.
-fn sized_realloc(orig_ptr: *mut u8, orig_size: usize, new_size: usize) -> *mut u8 {
-    unsafe {
-        let result = libc::malloc(new_size) as *mut u8;
-        libc::memcpy(
-            result as *mut libc::c_void,
-            orig_ptr as *mut libc::c_void,
-            orig_size
-        );
-        result
-    }
-}
-
 // RmcRawVec abstracts away common methods and functionality otherwise needed for
 // Vec and RmcIter
 struct RmcRawVec<T> {
@@ -75,8 +59,6 @@ struct RmcRawVec<T> {
 impl<T> RmcRawVec<T> {
     fn new() -> Self {
         let elem_size = mem::size_of::<T>();
-        // NOTE: (Mark. B) This default allocation size is important.
-        // A default 0 size leads to complex solver queries for smaller vec operations
         let cap = DEFAULT_CAPACITY;
         let ptr = unsafe { RmcUnique::new(libc::malloc(cap * elem_size) as *mut T) };
         RmcRawVec { ptr, cap }
@@ -88,30 +70,24 @@ impl<T> RmcRawVec<T> {
         RmcRawVec { ptr, cap }
     }
 
-    // grow() calls sized_realloc. By default, the new memory has twice the capacity
-    // of the old one.
     fn grow(&mut self) {
         let elem_size = mem::size_of::<T>();
         let new_cap = 2 * self.cap;
-        let ptr = sized_realloc(
-            self.ptr.as_ptr() as *mut _,
-            self.cap * elem_size,
-            new_cap * elem_size
-        );
+        unsafe {
+            let ptr = libc::realloc(self.ptr.as_ptr() as *mut _, new_cap * elem_size);
+            self.ptr = RmcUnique::new(ptr as *mut _);
+        }
 
-        self.ptr = RmcUnique::new(ptr as *mut _);
         self.cap = new_cap;
     }
 
     fn shrink_to_fit(&mut self, len: usize) {
         let elem_size = mem::size_of::<T>();
-        let ptr = sized_realloc(
-            self.ptr.as_ptr() as *mut _,
-            self.cap * elem_size,
-            len * elem_size
-        );
+        unsafe {
+            let ptr = libc::realloc(self.ptr.as_ptr() as *mut _, len * elem_size);
+            self.ptr = RmcUnique::new(ptr as *mut _);
+        }
 
-        self.ptr = RmcUnique::new(ptr as *mut _);
         self.cap = len;
     }
 
@@ -124,13 +100,11 @@ impl<T> RmcRawVec<T> {
         if self.needs_to_grow(len, additional) {
             // This function reserves space for atleast `additional` elements.
             let elem_size = mem::size_of::<T>();
-            let ptr = sized_realloc(
-                self.ptr.as_ptr() as *mut _,
-                len * elem_size,
-                (len + additional) * elem_size
-            );
+            unsafe {
+                let ptr = libc::realloc(self.ptr.as_ptr() as *mut _, (len  + additional) * elem_size);
+                self.ptr = RmcUnique::new(ptr as *mut _);
+            }
 
-            self.ptr = RmcUnique::new(ptr as *mut _);
             self.cap = len + additional;
         }
     }
@@ -143,32 +117,27 @@ impl<T> RmcRawVec<T> {
 pub trait Allocator {
 }
 
+#[derive(Clone, Copy)]
 pub struct RmcAllocator {
 }
 
 impl RmcAllocator {
     pub fn new() -> Self {
-        RmcAllocator {}
+        RmcAllocator {
+        }
     }
 }
 
 impl Allocator for RmcAllocator {
 }
 
-impl Default for RmcAllocator {
-    fn default() -> Self {
-        RmcAllocator::new()
-    }
-}
-
 // Vec abstraction
 // Ideally A should implement Allocator and the default type assigned to it
-// is Global. Currently stubbing it with type u64 since we are not really
-// using it anywhere.
+// is Global.
 pub struct Vec<T, A : Allocator = RmcAllocator> {
     buf: RmcRawVec<T>,
     len: usize,
-    allocator: A, // type A ideally implements allocator
+    allocator: A, // type A ideally implements Allocator
 }
 
 impl<T> Vec<T> {
@@ -176,7 +145,7 @@ impl<T> Vec<T> {
         Vec {
             buf: RmcRawVec::new(),
             len: 0,
-            allocator: Default::default()
+            allocator: RmcAllocator::new()
         }
     }
 
@@ -202,7 +171,7 @@ impl<T> Vec<T> {
 
 }
 
-impl <T, A: Allocator> Vec<T, A> {
+impl<T, A: Allocator> Vec<T, A> {
     fn ptr(&self) -> *mut T {
         self.buf.ptr.as_ptr()
     }
@@ -212,8 +181,7 @@ impl <T, A: Allocator> Vec<T, A> {
     }
 
     pub fn allocator(&self) -> &A {
-        assert!(false);
-        unimplemented!()
+        &self.allocator
     }
 
     pub fn push(&mut self, elem: T) {
@@ -270,12 +238,6 @@ impl <T, A: Allocator> Vec<T, A> {
         }
     }
 
-    pub fn extend<I: Iterator>(&mut self, iter: I) where I: Iterator<Item = T> {
-        iter.for_each(move |element| {
-            self.push(element);
-        });
-    }
-
     pub fn len(&self) -> usize {
         self.len
     }
@@ -311,9 +273,16 @@ impl <T, A: Allocator> Vec<T, A> {
     }
 
     pub fn truncate(&mut self, len: usize) {
-        // TODO: For soundness wrt standard library, call drop_in_place() for pointer
-        // pointing to a slice of elements which were dropped.
-        self.len = len;
+        unsafe {
+            if len > self.len {
+                return;
+            }
+
+            let remaining_len = self.len - len;
+            let s = slice_from_raw_parts_mut(self.as_mut_ptr().add(len), remaining_len);
+            self.len = len;
+            drop_in_place(s);
+        }
     }
 
     // Clears the vector, removing all values.
@@ -335,30 +304,6 @@ impl <T, A: Allocator> Vec<T, A> {
         assert!(false);
     }
 
-    // TODO:
-    // pub fn drain<R>(&mut self, range: R) -> Drain<'_, T, A>
-    // where
-    //     R: RangeBounds<usize> {
-    //     assert!(false);
-    // }
-
-    // TODO:
-    // pub fn drain_filter<F>(&mut self, filter: F) -> DrainFilter<'_, T, F, A>
-    // where:
-    //     F: FnMut(&mut T) -> bool {
-    //     assert!(false);
-    // }
-
-    // TODO:
-    // pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
-    //     unimplemeted!()
-    // }
-
-    // TODO:
-    // pub fn try_reserve_exact(&mut self, additional: usize) -> Result<(), TryReserveError> {
-    //     unimplemented!()
-    // }
-
     pub fn swap_remove(&mut self, index: usize) -> T {
         let len = self.len;
         assert!(index < len);
@@ -370,6 +315,8 @@ impl <T, A: Allocator> Vec<T, A> {
             replace(hole, last)
         }
     }
+
+    // This is not an overapproximation of what the RSL does.
     pub fn capacity(&self) -> usize {
         self.buf.capacity()
     }
@@ -378,7 +325,7 @@ impl <T, A: Allocator> Vec<T, A> {
     where
         A: Clone {
         assert!(at < self.len);
-
+        
         if at == 0 {
             return mem::replace(
                 self,
@@ -395,7 +342,6 @@ impl <T, A: Allocator> Vec<T, A> {
 
             copy_nonoverlapping(self.as_ptr().add(at), other.as_mut_ptr(), other.len());
         }
-
         other
     }
 
@@ -447,15 +393,16 @@ impl <T, A: Allocator> Vec<T, A> {
         }
     }
 
-    pub fn from_raw_parts_in(ptr: *mut T, length: usize, capacity: usize, alloc: A) -> Self {
-        assert!(false);
-        unimplemented!()
+    pub fn shrink_to_fit(&mut self, min_capacity: usize) {
+        if self.capacity() > min_capacity {
+            let max = if self.len > min_capacity { self.len } else { min_capacity };
+            self.buf.shrink_to_fit(max);
+        }
     }
 
     pub fn shrink_to(&mut self, min_capacity: usize) {
         if self.capacity() > min_capacity {
-            let max = if self.len > min_capacity { self.len } else { min_capacity };
-            self.buf.shrink_to_fit(max);
+            self.buf.shrink_to_fit(cmp::max(self.len, min_capacity));
         }
     }
 
@@ -463,6 +410,7 @@ impl <T, A: Allocator> Vec<T, A> {
     where
         F: FnMut(&T) -> bool {
         assert!(false);
+        unimplemented!()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -515,6 +463,14 @@ impl<T: Clone, A: Allocator> Vec<T, A> {
 impl<T: PartialEq, A: Allocator> Vec<T, A> {
     pub fn dedup(&mut self) {
         self.dedup_by(|a, b| a == b);
+    }
+}
+
+impl<T, A: Allocator> Drop for Vec<T, A> {
+    fn drop(&mut self) {
+        unsafe {
+            drop_in_place(slice_from_raw_parts_mut(self.as_mut_ptr(), self.len))
+        }
     }
 }
 
@@ -578,7 +534,7 @@ impl<T, A: Allocator> DerefMut for Vec<T, A> {
     }
 }
 
-impl <T: Clone, A: Allocator + Clone> Clone for Vec<T, A> {
+impl<T: Clone, A: Allocator + Clone> Clone for Vec<T, A> {
     fn clone(&self) -> Self {
         let mut v = Self::with_capacity_in(self.len(), self.allocator.clone());
         for idx in 0..self.len() {
@@ -592,13 +548,13 @@ impl <T: Clone, A: Allocator + Clone> Clone for Vec<T, A> {
     }
 }
 
-impl <T: Hash, A: Allocator> Hash for Vec<T, A> {
+impl<T: Hash, A: Allocator> Hash for Vec<T, A> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Hash::hash(&**self, state)
     }
 }
 
-impl <T, I: SliceIndex<[T]>, A: Allocator> Index<I> for Vec<T, A> {
+impl<T, I: ::std::slice::SliceIndex<[T]>, A: Allocator> Index<I> for Vec<T, A> {
     type Output = I::Output;
 
     fn index(&self, index: I) -> &Self::Output {
@@ -606,7 +562,7 @@ impl <T, I: SliceIndex<[T]>, A: Allocator> Index<I> for Vec<T, A> {
     }
 }
 
-impl<T, I: SliceIndex<[T]>, A: Allocator> IndexMut<I> for Vec<T, A> {
+impl<T, I: ::std::slice::SliceIndex<[T]>, A: Allocator> IndexMut<I> for Vec<T, A> {
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         IndexMut::index_mut(&mut **self, index)
     }
@@ -643,16 +599,54 @@ impl<'a, T, A: Allocator> IntoIterator for &'a mut Vec<T, A> {
 impl<T, A: Allocator> Extend<T> for Vec<T, A> {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         for elem in iter.into_iter() {
-            v.push(elem);
+            self.push(elem);
         }
     }
+}
 
-    fn extend_one(&mut self, item: T) {
-        self.push(item);
+impl<'a, T: Copy + 'a, A: Allocator + 'a> Extend<&'a T> for Vec<T, A> {
+    fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
+        for elem in iter.into_iter() {
+            self.push(*elem);
+        }
     }
+}
 
-    fn extend_reserve(&mut self, additional: usize) {
-        self.reserve(additional);
+impl<T: PartialOrd, A: Allocator> PartialOrd for Vec<T, A> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        PartialOrd::partial_cmp(&**self, &**other)
+    }
+}
+
+impl<T: Eq, A: Allocator> Eq for Vec<T, A> {}
+
+impl<T: Ord, A: Allocator> Ord for Vec<T, A> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        Ord::cmp(&**self, &**other)
+    }
+}
+
+impl<T, A: Allocator> AsRef<Vec<T, A>> for Vec<T, A> {
+    fn as_ref(&self) -> &Vec<T, A> {
+        self
+    }
+}
+
+impl<T, A: Allocator> AsMut<Vec<T, A>> for Vec<T, A> {
+    fn as_mut(&mut self) -> &mut Vec<T, A> {
+        self
+    }
+}
+
+impl<T, A: Allocator> AsRef<[T]> for Vec<T, A> {
+    fn as_ref(&self) -> &[T] {
+        self
+    }
+}
+
+impl<T, A: Allocator> AsMut<[T]> for Vec<T, A> {
+    fn as_mut(&mut self) -> &mut [T] {
+        self
     }
 }
 
@@ -660,6 +654,90 @@ impl<T: fmt::Debug, A: Allocator> fmt::Debug for Vec<T, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
+}
+
+impl<T: Clone> From<&[T]> for Vec<T> {
+    fn from(s: &[T]) -> Vec<T> {
+        let mut v = Vec::new();
+        for elem in s {
+            v.push(elem.clone());
+        }
+        v
+    }
+}
+
+impl<T: Clone> From<&mut [T]> for Vec<T> {
+    fn from(s: &mut [T]) -> Vec<T> {
+        let mut v = Vec::new();
+        for elem in s {
+            v.push(elem.clone());
+        }
+        v
+    }
+}
+
+impl<T, const N: usize> From<[T; N]> for Vec<T> {
+    fn from(s: [T; N]) -> Vec<T> {
+        let mut v = Vec::new();
+        for elem in s {
+            v.push(elem);
+        }
+        v
+    }
+}
+
+impl<'a, T> From<Cow<'a, [T]>> for Vec<T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    fn from(s: Cow<'a, [T]>) -> Vec<T> {
+        s.into_owned()
+    }
+}
+
+impl From<&str> for Vec<u8> {
+    fn from(s: &str) -> Vec<u8> {
+        From::from(s.as_bytes())
+    }
+}
+
+impl<T, A: Allocator, const N: usize> TryFrom<Vec<T, A>> for [T; N] {
+    type Error = Vec<T, A>;
+
+    fn try_from(mut vec: Vec<T, A>) -> Result<[T; N], Vec<T, A>> {
+        if vec.len() != N {
+            return Err(vec);
+        }
+
+        unsafe { vec.set_len(0) };
+
+        let array = unsafe { read(vec.as_ptr() as *const [T; N]) };
+        Ok(array)
+    }
+}
+
+#[cfg(abs_type = "rmc")]
+#[macro_export]
+macro_rules! rmc_vec {
+  ( $val:expr ; $count:expr ) =>
+    ({
+      let mut result = Vec::new();
+      let mut i: usize = 0;
+      while i < $count {
+        result.push($val);
+        i += 1;
+      }
+      result
+    });
+  ( $( $xs:expr ),* ) => {
+    {
+      let mut result = Vec::new();
+      $(
+        result.push($xs);
+      )*
+      result
+    }
+  };
 }
 
 ////////////////////////////////////////////////////////////
@@ -711,6 +789,7 @@ impl<T> RmcRawValIter<T> {
 
 impl<T> Iterator for RmcRawValIter<T> {
     type Item = T;
+
     fn next(&mut self) -> Option<T> {
         if self.start == self.end {
             None
@@ -759,6 +838,7 @@ pub struct RmcIntoIter<T: Sized> {
 
 impl<T: Sized> Iterator for RmcIntoIter<T> {
     type Item = T;
+
     fn next(&mut self) -> Option<T> {
         self.iter.next()
     }
@@ -772,30 +852,6 @@ impl<T: Sized> DoubleEndedIterator for RmcIntoIter<T> {
     fn next_back(&mut self) -> Option<T> {
         self.iter.next_back()
     }
-}
-
-#[cfg(abs_type = "rmc")]
-#[macro_export]
-macro_rules! rmc_vec {
-  ( $val:expr ; $count:expr ) =>
-    ({
-      let mut result = Vec::new();
-      let mut i: usize = 0;
-      while i < $count {
-        result.push($val);
-        i += 1;
-      }
-      result
-    });
-  ( $( $xs:expr ),* ) => {
-    {
-      let mut result = Vec::new();
-      $(
-        result.push($xs);
-      )*
-      result
-    }
-  };
 }
 
 macro_rules! __impl_slice_eq1 {
