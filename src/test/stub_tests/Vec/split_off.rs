@@ -1,0 +1,12 @@
+include!{"../../rmc-prelude.rs"}
+
+fn main() {
+    fn split_off_test() {
+        let mut vec = rmc_vec![1, 2, 3];
+        let vec2 = vec.split_off(1);
+        assert!(vec == [1]);
+        assert!(vec2 == [2, 3]);
+    }
+
+    split_off_test();
+}
