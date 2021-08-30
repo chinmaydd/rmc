@@ -295,6 +295,7 @@ impl<T, A: Allocator> Vec<T, A> {
     where
         F: FnMut(&mut T, &mut T) -> bool {
         assert!(false);
+        unimplemented!()
     }
 
     pub fn dedup_by_key<F, K>(&mut self, key: F)
@@ -302,6 +303,7 @@ impl<T, A: Allocator> Vec<T, A> {
         F: FnMut(&mut T) -> K,
         K: PartialEq<K> {
         assert!(false);
+        unimplemented!()
     }
 
     pub fn swap_remove(&mut self, index: usize) -> T {
@@ -347,7 +349,7 @@ impl<T, A: Allocator> Vec<T, A> {
 
     fn with_capacity_in(capacity: usize, allocator: A) -> Self {
         Vec {
-            buf: RmcRawVec::new(),
+            buf: RmcRawVec::new_with_capacity(capacity),
             len: 0,
             allocator: allocator
         }
@@ -385,6 +387,7 @@ impl<T, A: Allocator> Vec<T, A> {
 
                 for _ in 0..additional {
                     write(ptr, closure());
+                    ptr = ptr.offset(1);
                     self.len += 1;
                 }
             }
@@ -393,10 +396,9 @@ impl<T, A: Allocator> Vec<T, A> {
         }
     }
 
-    pub fn shrink_to_fit(&mut self, min_capacity: usize) {
-        if self.capacity() > min_capacity {
-            let max = if self.len > min_capacity { self.len } else { min_capacity };
-            self.buf.shrink_to_fit(max);
+    pub fn shrink_to_fit(&mut self) {
+        if self.capacity() > self.len {
+            self.buf.shrink_to_fit(self.len);
         }
     }
 
@@ -439,6 +441,7 @@ impl<T: Clone, A: Allocator> Vec<T, A> {
 
                 for _ in 0..additional {
                     write(ptr, value.clone());
+                    ptr = ptr.offset(1);
                     self.len += 1;
                 }
             }
@@ -448,8 +451,15 @@ impl<T: Clone, A: Allocator> Vec<T, A> {
     }
 
     pub fn extend_from_slice(&mut self, other: &[T]) {
-        for elem in other.iter() {
-            self.push(elem.clone());
+        let other_len = other.len();
+
+        unsafe {
+            let mut other_ptr = other.as_ptr();
+            
+            for _ in 0..other_len {
+                self.push(read(other_ptr));
+                other_ptr = other_ptr.offset(1);
+            }
         }
     }
 
@@ -457,6 +467,7 @@ impl<T: Clone, A: Allocator> Vec<T, A> {
     where
         R: RangeBounds<usize> {
         assert!(false);
+        unimplemented!()
     }
 }
 
@@ -659,8 +670,15 @@ impl<T: fmt::Debug, A: Allocator> fmt::Debug for Vec<T, A> {
 impl<T: Clone> From<&[T]> for Vec<T> {
     fn from(s: &[T]) -> Vec<T> {
         let mut v = Vec::new();
-        for elem in s {
-            v.push(elem.clone());
+        let s_len = s.len();
+
+        unsafe {
+            let mut s_ptr = s.as_ptr();
+            
+            for _ in 0..s_len {
+                v.push(read(s_ptr));
+                s_ptr = s_ptr.offset(1);
+            }
         }
         v
     }
@@ -669,8 +687,15 @@ impl<T: Clone> From<&[T]> for Vec<T> {
 impl<T: Clone> From<&mut [T]> for Vec<T> {
     fn from(s: &mut [T]) -> Vec<T> {
         let mut v = Vec::new();
-        for elem in s {
-            v.push(elem.clone());
+        let s_len = s.len();
+
+        unsafe {
+            let mut s_ptr = s.as_ptr();
+            
+            for _ in 0..s_len {
+                v.push(read(s_ptr));
+                s_ptr = s_ptr.offset(1);
+            }
         }
         v
     }
@@ -686,14 +711,14 @@ impl<T, const N: usize> From<[T; N]> for Vec<T> {
     }
 }
 
-impl<'a, T> From<Cow<'a, [T]>> for Vec<T>
-where
-    [T]: ToOwned<Owned = Vec<T>>,
-{
-    fn from(s: Cow<'a, [T]>) -> Vec<T> {
-        s.into_owned()
-    }
-}
+// impl<'a, T> From<Cow<'a, [T]>> for Vec<T>
+// where
+//     [T]: ToOwned<Owned = Vec<T>>,
+// {
+//     fn from(s: Cow<'a, [T]>) -> Vec<T> {
+//         s.into_owned()
+//     }
+// }
 
 impl From<&str> for Vec<u8> {
     fn from(s: &str) -> Vec<u8> {
