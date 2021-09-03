@@ -7,16 +7,16 @@ mod utils;
 // over the type of the elements it can contain.
 //
 // The implementation is heavily inspired from the Rustonomicon and the Smack library.
-use std::mem;
-use std::marker::PhantomData;
-use std::ptr::{drop_in_place, read};
-use std::ops::{Index, Deref, DerefMut, FnMut, RangeBounds, IndexMut};
+use std::cmp;
+use std::convert::TryFrom;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
+use std::marker::PhantomData;
+use std::mem;
+use std::ops::{Deref, DerefMut, FnMut, Index, IndexMut, RangeBounds};
+use std::ptr::{drop_in_place, read};
 use std::slice;
-use std::cmp;
-use std::convert::TryFrom;
 
 // TODO: CBMC MAX_MALLOC?
 const DEFAULT_CAPACITY: usize = 1024;
@@ -57,7 +57,7 @@ impl<T> RmcRawVec<T> {
         self.cap = new_cap;
     }
 
-    // Reallocate memory such that the allocation size is equal to the exact 
+    // Reallocate memory such that the allocation size is equal to the exact
     // requirement of the Vector.
     fn shrink_to_fit(&mut self, len: usize) {
         let elem_size = mem::size_of::<T>();
@@ -78,7 +78,9 @@ impl<T> RmcRawVec<T> {
             // This function reserves space for atleast `additional` elements.
             let elem_size = mem::size_of::<T>();
             unsafe {
-                self.ptr = libc::realloc(self.ptr as *mut libc::c_void, (len  + additional) * elem_size) as *mut T;
+                self.ptr =
+                    libc::realloc(self.ptr as *mut libc::c_void, (len + additional) * elem_size)
+                        as *mut T;
             }
 
             self.cap = len + additional;
@@ -92,58 +94,48 @@ impl<T> RmcRawVec<T> {
 
 impl<T> Drop for RmcRawVec<T> {
     fn drop(&mut self) {
-        unsafe { libc::free(self.ptr as *mut _); }
-    }
-}
-
-pub trait Allocator {
-}
-
-#[derive(Clone, Copy)]
-pub struct RmcAllocator {
-}
-
-impl RmcAllocator {
-    pub fn new() -> Self {
-        RmcAllocator {
+        unsafe {
+            libc::free(self.ptr as *mut _);
         }
     }
 }
 
-impl Allocator for RmcAllocator {
+pub trait Allocator {}
+
+#[derive(Clone, Copy)]
+pub struct RmcAllocator {}
+
+impl RmcAllocator {
+    pub fn new() -> Self {
+        RmcAllocator {}
+    }
 }
+
+impl Allocator for RmcAllocator {}
 
 // Vec abstraction
 // Ideally A should implement Allocator and the default type assigned to it
 // is Global.
-pub struct Vec<T, A : Allocator = RmcAllocator> {
+pub struct Vec<T, A: Allocator = RmcAllocator> {
     buf: RmcRawVec<T>,
     len: usize,
     allocator: A,
 }
 
-// Impl block for helper functions 
+// Impl block for helper functions
 impl<T, A: Allocator> Vec<T, A> {
     fn ptr(&self) -> *mut T {
         self.buf.ptr as *mut T
     }
 
     fn with_capacity_in(capacity: usize, allocator: A) -> Self {
-        Vec {
-            buf: RmcRawVec::new_with_capacity(capacity),
-            len: 0,
-            allocator: allocator
-        }
+        Vec { buf: RmcRawVec::new_with_capacity(capacity), len: 0, allocator: allocator }
     }
 }
 
 impl<T> Vec<T> {
     pub fn new() -> Self {
-        Vec {
-            buf: RmcRawVec::new(),
-            len: 0,
-            allocator: RmcAllocator::new()
-        }
+        Vec { buf: RmcRawVec::new(), len: 0, allocator: RmcAllocator::new() }
     }
 
     pub fn with_capacity(cap: usize) -> Self {
@@ -154,11 +146,12 @@ impl<T> Vec<T> {
         let mut v = Vec {
             buf: RmcRawVec::new_with_capacity(capacity),
             len: 0,
-            allocator: RmcAllocator::new()
+            allocator: RmcAllocator::new(),
         };
         unsafe {
             let mut curr_idx: isize = 0;
             while curr_idx < length as isize {
+                // document that the push is cheap here because we have reserved capacity
                 v.push(read(ptr.offset(curr_idx)));
                 curr_idx += 1;
             }
@@ -224,7 +217,7 @@ impl<T, A: Allocator> Vec<T, A> {
             let result = read(self.ptr().offset(index as isize));
             if self.len - index > 0 {
                 // Perform a memmove of all data from the index starting at idx + 1
-                // to idx to occupy space created by the element which was removed. 
+                // to idx to occupy space created by the element which was removed.
                 libc::memmove(
                     self.ptr().offset(index as isize) as *mut libc::c_void,
                     self.ptr().offset(index as isize + 1) as *mut libc::c_void,
@@ -292,9 +285,11 @@ impl<T, A: Allocator> Vec<T, A> {
         self.truncate(0);
     }
 
+    // Remove and document that its not needed as interface
     pub fn dedup_by<F>(&mut self, same_bucket: F)
     where
-        F: FnMut(&mut T, &mut T) -> bool {
+        F: FnMut(&mut T, &mut T) -> bool,
+    {
         assert!(false);
         unimplemented!()
     }
@@ -302,7 +297,8 @@ impl<T, A: Allocator> Vec<T, A> {
     pub fn dedup_by_key<F, K>(&mut self, key: F)
     where
         F: FnMut(&mut T) -> K,
-        K: PartialEq<K> {
+        K: PartialEq<K>,
+    {
         assert!(false);
         unimplemented!()
     }
@@ -330,9 +326,10 @@ impl<T, A: Allocator> Vec<T, A> {
 
     pub fn split_off(&mut self, at: usize) -> Self
     where
-        A: Clone {
+        A: Clone,
+    {
         assert!(at <= self.len);
-        
+
         let other_len = self.len - at;
         let mut other = Vec::with_capacity_in(other_len, self.allocator().clone());
 
@@ -340,7 +337,8 @@ impl<T, A: Allocator> Vec<T, A> {
             libc::memcpy(
                 other.as_mut_ptr() as *mut libc::c_void,
                 self.as_ptr().offset(at as isize) as *mut libc::c_void,
-                other_len * mem::size_of::<T>());
+                other_len * mem::size_of::<T>(),
+            );
 
             self.set_len(at);
             other.set_len(other_len);
@@ -350,24 +348,17 @@ impl<T, A: Allocator> Vec<T, A> {
     }
 
     pub fn append(&mut self, other: &mut Vec<T, A>) {
-        let mut i: usize = 0;
-        let olen = other.len();
-        let mut drain = Vec::new();
-        while i < olen {
-            drain.push(other.pop().unwrap());
-            i += 1;
-        }
-        // Empty other
-        i = 0;
-        while i < olen {
-            self.push(drain.pop().unwrap());
-            i += 1;
+        self.reserve(other.len());
+        while let Some(tmp) = other.pop() {
+            self.push(tmp);
         }
     }
 
+    // TODO: Fix the fact that some are pointer operations and some are push()
     pub fn resize_with<F>(&mut self, new_len: usize, f: F)
     where
-        F: FnMut() -> T {
+        F: FnMut() -> T,
+    {
         let len = self.len();
 
         if new_len > len {
@@ -405,7 +396,8 @@ impl<T, A: Allocator> Vec<T, A> {
 
     pub fn retain<F>(&mut self, mut f: F)
     where
-        F: FnMut(&T) -> bool {
+        F: FnMut(&T) -> bool,
+    {
         assert!(false);
         unimplemented!()
     }
@@ -415,11 +407,7 @@ impl<T, A: Allocator> Vec<T, A> {
     }
 
     pub fn new_in(alloc: A) -> Self {
-        Vec {
-            buf: RmcRawVec::new(),
-            len: 0,
-            allocator: alloc
-        }
+        Vec { buf: RmcRawVec::new(), len: 0, allocator: alloc }
     }
 }
 
@@ -447,10 +435,11 @@ impl<T: Clone, A: Allocator> Vec<T, A> {
 
     pub fn extend_from_slice(&mut self, other: &[T]) {
         let other_len = other.len();
+        self.reserve(other_len);
 
         unsafe {
             let mut other_ptr = other.as_ptr();
-            
+
             for _ in 0..other_len {
                 self.push(read(other_ptr));
                 other_ptr = other_ptr.offset(1);
@@ -460,7 +449,8 @@ impl<T: Clone, A: Allocator> Vec<T, A> {
 
     pub fn extend_from_within<R>(&mut self, src: R)
     where
-        R: RangeBounds<usize> {
+        R: RangeBounds<usize>,
+    {
         assert!(false);
         unimplemented!()
     }
@@ -474,8 +464,7 @@ impl<T: PartialEq, A: Allocator> Vec<T, A> {
 
 // Drop is codegen for most types, no need to perform any action here.
 impl<T, A: Allocator> Drop for Vec<T, A> {
-    fn drop(&mut self) {
-    }
+    fn drop(&mut self) {}
 }
 
 ////////////////////////////////////////////////////////////
@@ -490,7 +479,7 @@ impl<T: PartialEq, A: Allocator> PartialEq for Vec<T, A> {
 
         for idx in 0..self.len {
             if self[idx] != other[idx] {
-                return false
+                return false;
             }
         }
 
@@ -508,10 +497,7 @@ impl<T, A: Allocator> IntoIterator for Vec<T, A> {
             let buf = read(&self.buf);
             mem::forget(self);
 
-            RmcIntoIter {
-                iter,
-                _buf: buf,
-            }
+            RmcIntoIter { iter, _buf: buf }
         }
     }
 }
@@ -548,7 +534,7 @@ impl<T: Clone, A: Allocator + Clone> Clone for Vec<T, A> {
     }
 
     fn clone_from(&mut self, other: &Self) {
-       *self = other.clone();
+        *self = other.clone();
     }
 }
 
@@ -667,7 +653,7 @@ impl<T: Clone> From<&[T]> for Vec<T> {
 
         unsafe {
             let mut s_ptr = s.as_ptr();
-            
+
             for _ in 0..s_len {
                 v.push(read(s_ptr));
                 s_ptr = s_ptr.offset(1);
@@ -684,7 +670,7 @@ impl<T: Clone> From<&mut [T]> for Vec<T> {
 
         unsafe {
             let mut s_ptr = s.as_ptr();
-            
+
             for _ in 0..s_len {
                 v.push(read(s_ptr));
                 s_ptr = s_ptr.offset(1);

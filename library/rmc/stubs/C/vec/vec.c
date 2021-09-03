@@ -38,15 +38,21 @@ typedef struct {
 // a new allocation. This implementation doubles the capacity, but in theory
 // it could be implemented as a sized_grow() which takes in a new size.
 void vec_grow(vec* v) {
-	uint32_t* new_mem = (uint32_t *) realloc(v->mem, v->capacity * 2 * sizeof(uint32_t));
+	uint32_t* new_mem = (uint32_t *) realloc(v->mem, v->capacity * 2 * sizeof(*v->mem));
 	v->mem = new_mem;
 	v->capacity = v->capacity * 2;
+}
+
+void vec_sized_grow(vec* v, uint32_t additional) {
+	uint32_t* new_mem = (uint32_t *) realloc(v->mem, v->capacity + additional);
+	v->mem = new_mem;
+	v->capacity = v->capacity + additional;
 }
 
 vec* vec_new() {
 	vec *v = (vec *) malloc(sizeof(vec));
 	// Default size is MAX_MALLOC_SIZE
-	v->mem = (uint32_t *) malloc(MAX_MALLOC_SIZE * sizeof(uint32_t));
+	v->mem = (uint32_t *) malloc(MAX_MALLOC_SIZE * sizeof(*v->mem));
 	v->len = 0;
 	v->capacity = MAX_MALLOC_SIZE;
 	return v;
@@ -54,7 +60,7 @@ vec* vec_new() {
 
 vec* vec_with_capacity(size_t capacity) {
 	vec *v = (vec *) malloc(sizeof(vec));
-	v->mem = (uint32_t *) malloc(capacity * sizeof(uint32_t));
+	v->mem = (uint32_t *) malloc(capacity * sizeof(*v->mem));
 	v->len = 0;
 	v->capacity = capacity;
 	return v;
@@ -78,6 +84,8 @@ uint32_t vec_pop(vec* v) {
 }
 
 void vec_append(vec* v1, vec* v2) {
+	// reserve space
+	vec_sized_grow(v1, v2->len);
 	size_t i = 0;
 	for (i = 0; i < v2->len; i++) {
 		vec_push(v1, v2->mem[i]);
@@ -92,5 +100,3 @@ uint32_t vec_len(vec* v) {
 uint32_t vec_cap(vec* v) {
 	return v->capacity;
 }
-
-

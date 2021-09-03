@@ -76,6 +76,8 @@ hashset* hashset_new() {
 	// NOTE: This is unsound.
 	//
 	// set->domain = calloc(UINT32_MAX, sizeof(int32_t));
+	//
+	// TODO: check if we can do max malloc here
 	set->domain = calloc(4096, sizeof(int32_t));
 
 	set->domain[0] = SENTINEL;
