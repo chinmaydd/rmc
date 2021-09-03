@@ -31,7 +31,7 @@ include! {"../../library/rmc/stubs/Rust/vec/noback_vec.rs"}
 include! {"../../library/rmc/stubs/Rust/vec/c_vec.rs"}
 
 #[cfg(use_abs)]
-#[cfg(abs_type = "rmc")]
+#[cfg(abs_type = "c-ffi")]
 include! {"../../library/rmc/stubs/Rust/hashset/c_hashset.rs"}
 
 fn __VERIFIER_assume(cond: bool) {

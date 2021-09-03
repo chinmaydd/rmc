@@ -65,8 +65,8 @@ impl<T> Vec<T> {
         // By default, we create a vector with a high default capacity. An
         // important callout to make here is that it prevents us from discovering
         // buffer-overflow bugs since we will (most-likely) always have enough
-        // space allocated for the Vec. Please note that this is however not a
-        // concern for this abstaction.
+        // space allocated additional to the required vec capacity.
+        // NOTE: This is however not a concern for this abstaction.
         Vec { len: 0, capacity: DEFAULT_CAPACITY, _marker: Default::default() }
     }
 

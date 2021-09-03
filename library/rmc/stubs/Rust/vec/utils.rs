@@ -7,7 +7,7 @@
 // We use methods from libc as they are directly translated into CBMC primitives.
 // In which case, if CBMC does better by implementing any optimizations on these
 // operations, RMC would do better too.
-extern crate libc;
+pub extern crate libc;
 
 // Currently, the way we handle non-determinism is to implement a __nondet::<T>::()
 // function which is stubbed to be `unimplemented!()`. However, at a later time
